@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="fr" x-data="chatApp()">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+    <title>Assistant Mes Droits</title>
+    <link rel="icon" href="static/speech_balloon.png" type="image/png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.14.9/dist/cdn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        [x-cloak] { display: none !important; }
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+        .dot-animation span {
+            animation: bounce 1s infinite;
+            display: inline-block;
+        }
+        .dot-animation span:nth-child(2) { animation-delay: 0.2s; }
+        .dot-animation span:nth-child(3) { animation-delay: 0.4s; }
+    </style>
+</head>
+<body class="bg-gray-50 h-screen flex flex-col" x-cloak>
+    <div class="flex-1 w-full">
+        <div class="h-full flex flex-col bg-white shadow-lg overflow-hidden mx-0">
+            <!-- Header -->
+            <div class="bg-blue-600 text-white p-4">
+                <div class="flex justify-between items-center max-w-6xl mx-auto">
+                    <h1 class="text-xl font-bold">
+                        <img src="static/speech_balloon.png" alt="Chat Icon" class="inline-block h-6 w-6 mr-2 align-middle">
+                        Assistant Mes Droits
+                    </h1>
+                    <button @click="resetConversation()"
+                            class="text-white hover:text-blue-200 text-sm">
+                        Réinitialiser
+                    </button>
+                </div>
+            </div>
+
+            <!-- Chat Container -->
+            <div class="p-4 space-y-4 bg-gray-50 flex-1">
+                <!-- Welcome Card -->
+                <div class="bg-white rounded-lg shadow p-4 mb-4 max-w-6xl mx-auto">
+                    <p class="text-sm text-gray-600 mb-3">
+                        Bienvenue ! Ce chatbot est conçu pour répondre à vos questions sur vos droits en France.<br>
+                        Il utilise la base de données publique <a class='text-blue-600' href="https://www.data.gouv.fr/fr/datasets/fiches-pratiques-et-ressources-de-service-public-fr-particuliers">Fiches pratiques et ressources de Service-Public.fr Particuliers</a>.<br>
+                    </p>
+                    <div class="space-y-2">
+                        <p class="text-sm text-gray-600 mb-3">Exemples de questions :</p>
+                        <button @click="newMessage = 'Quels sont mes droits en tant que locataire ?'"
+                                class="text-left w-full p-2 hover:bg-gray-50 rounded text-sm text-blue-600">
+                            • Quels sont mes droits en tant que locataire ?
+                        </button>
+                        <button @click="newMessage = 'Comment obtenir une aide juridique ?'"
+                                class="text-left w-full p-2 hover:bg-gray-50 rounded text-sm text-blue-600">
+                            • Comment obtenir une aide juridique ?
+                        </button>
+                        <button @click="newMessage = 'Comment refaire mon permis ?'"
+                                class="text-left w-full p-2 hover:bg-gray-50 rounded text-sm text-blue-600">
+                            • Comment refaire mon permis ?
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Messages -->
+                <div class="max-w-6xl mx-auto">
+                    <template x-for="message in filteredMessages" :key="message.id">
+                        <div :class="message.type === 'human' ? 'text-right' : 'text-left'">
+                            <div class="inline-block p-3 rounded-lg max-w-sm lg:max-w-lg text-sm"
+                                 :class="message.type === 'human'
+                                         ? 'bg-blue-600 text-white'
+                                         : 'bg-gray-200 text-gray-800'">
+                                <span x-html="parseMarkdown(message.content)"></span>
+                            </div>
+                        </div>
+                    </template>
+
+                    <div x-show="loading" class="text-left">
+                        <div class="inline-block p-3 rounded-lg max-w-sm lg:max-w-lg text-sm bg-gray-200 text-gray-800">
+                            <div class="dot-animation">
+                                <span>.</span><span>.</span><span>.</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Input & Footer -->
+            <div class="p-4 bg-white border-t">
+                <div class="max-w-6xl mx-auto">
+                    <form @submit.prevent="sendMessage()" class="flex gap-2">
+                        <input type="text"
+                            x-model="newMessage"
+                            class="flex-1 p-2 border rounded-lg text-sm"
+                            placeholder="Votre message..."
+                            @keydown.enter.prevent="sendMessage()"
+                            :disabled="loading">
+                        <button type="submit"
+                                class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm"
+                                :disabled="loading">
+                            <span x-show="!loading">Envoyer</span>
+                            <span x-show="loading">Envoi...</span>
+                        </button>
+                    </form>
+
+                    <!-- Disclaimer -->
+                    <p class="text-xs text-gray-500 mt-3 text-center">
+                        Les informations fournies par ce chatbot sont à titre indicatif uniquement et ne constituent
+                        pas un avis juridique. Pour des conseils juridiques personnalisés, veuillez consulter un
+                        professionnel de droit.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const renderer = new marked.Renderer();
+        renderer.link = function(href, title, text) {
+            const link = marked.Renderer.prototype.link.call(this, href, title, text);
+            return link.replace("<a","<a class='text-blue-600' target='_blank' ");
+        };
+
+        marked.setOptions({
+            breaks: true,
+            sanitize: true,
+            renderer: renderer
+        });
+
+        function chatApp() {
+            return {
+                messages: [],
+                newMessage: '',
+                loading: false,
+
+                get filteredMessages() {
+                    return this.messages.filter(msg => msg.type !== 'tool');
+                },
+
+                parseMarkdown(content) {
+                    return marked.parse(content);
+                },
+
+                scrollToBottom() {
+                    setTimeout(() => {
+                        window.scrollTo({
+                            top: document.documentElement.scrollHeight,
+                            behavior: 'smooth'
+                        });
+                    }, 50);
+                },
+
+                async sendMessage() {
+                    if (!this.newMessage.trim() || this.loading) return;
+
+                    const humanMessage = {
+                        type: 'human',
+                        content: this.newMessage,
+                        id: Date.now().toString()
+                    };
+
+                    this.messages.push(humanMessage);
+                    this.scrollToBottom();
+
+                    this.newMessage = '';
+                    this.loading = true;
+
+                    try {
+                        const response = await fetch('/chat', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({ messages: this.messages })
+                        });
+
+                        const aiMessage = await response.json();
+                        this.messages.push(aiMessage);
+                        this.scrollToBottom();
+                    } catch (error) {
+                        console.error('Error:', error);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async resetConversation() {
+                    try {
+                        await fetch('/reset', { method: 'POST' });
+                        this.messages = [];
+                        this.scrollToBottom();
+                    } catch (error) {
+                        console.error('Error:', error);
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
